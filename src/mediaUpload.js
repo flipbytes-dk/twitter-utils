@@ -31,42 +31,37 @@ export async function uploadMediaToTwitter(imageUrl, accessToken) {
       totalBytes,
     });
 
-    // 1. INIT phase
-    console.log('Initializing media upload');
-    const initFormData = new FormData();
-    initFormData.append('command', 'INIT');
-    initFormData.append('total_bytes', totalBytes.toString());
-    initFormData.append('media_type', contentType);
-
-    const initResponse = await fetch(TWITTER_UPLOAD_API, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: initFormData,
-    });
-    console.log('before initResponse', initResponse);
-
+    // 1. INIT phase (Twitter/X v2 API)
+    console.log('Initializing media upload (v2 API)');
+    const initPayload = {
+      media_category: 'tweet_image',
+      media_type: contentType,
+      total_bytes: totalBytes,
+    };
+    const initResponse = await fetch(
+      `${TWITTER_UPLOAD_API}/initialize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(initPayload),
+      }
+    );
     if (!initResponse.ok) {
       const errorData = await initResponse.text();
       console.log('errorData', errorData, initResponse);
-      throw new Error(`Media upload initialization failed: ${errorData}`);
+      throw new Error(`Media upload initialization failed (v2): ${errorData}`);
     }
-
-    console.log('initResponse', initResponse);
-
     const initData = await initResponse.json();
-    console.log('initData', initData);
-
-    // Check if we have media_id_string
-    if (!initData || !initData.data.id) {
-      throw new Error('Invalid media upload response from Twitter');
+    console.log('initData (v2) data', initData);
+    if (!initData || !initData.data || !initData.data.id) {
+      throw new Error('Invalid media upload response from Twitter v2');
     }
-
     const mediaId = initData.data.id;
 
-    // 2. APPEND phase - Stream the image directly to Twitter
-
+    // 2. APPEND phase - Stream the image directly to Twitter (v2 API)
     console.log('Media upload initialized with ID:', mediaId);
     console.log('streaming the upload');
     // Fetch the image as a stream
@@ -80,53 +75,50 @@ export async function uploadMediaToTwitter(imageUrl, accessToken) {
     // For smaller files, we can use a single APPEND command
     // This is more efficient for most profile images and small media
     const appendFormData = new FormData();
-    appendFormData.append('command', 'APPEND');
-    appendFormData.append('media_id', mediaId);
-    appendFormData.append('segment_index', '0');
-
-    // Get image as buffer for appending - using buffer instead of blob for Node.js compatibility
-    const arrayBuffer = await imageResponse.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Append buffer with filename and content type for proper multipart/form-data handling
-    appendFormData.append('media', buffer, {
+    // v2 API: Only 'media' and 'segment_index' are required
+    appendFormData.append('media', Buffer.from(await imageResponse.arrayBuffer()), {
       filename: 'media.jpg',
       contentType: contentType,
     });
+    appendFormData.append('segment_index', '0');
 
-    const appendResponse = await fetch(TWITTER_UPLOAD_API, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: appendFormData,
-    });
+    const appendResponse = await fetch(
+      `${TWITTER_UPLOAD_API}/${mediaId}/append`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          // 'Content-Type' will be set automatically by FormData
+        },
+        body: appendFormData,
+      }
+    );
 
     if (!appendResponse.ok) {
       const errorText = await appendResponse.text();
-      throw new Error(`Media upload append failed: ${errorText}`);
+      throw new Error(`Media upload append failed (v2): ${errorText}`);
     }
 
-    // 3. FINALIZE phase
-    const finalizeFormData = new FormData();
-    finalizeFormData.append('command', 'FINALIZE');
-    finalizeFormData.append('media_id', mediaId);
-
-    const finalizeResponse = await fetch(TWITTER_UPLOAD_API, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: finalizeFormData,
-    });
+    // 3. FINALIZE phase (v2 API)
+    const finalizeResponse = await fetch(
+      `${TWITTER_UPLOAD_API}/${mediaId}/finalize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        // For images, body can be empty
+      }
+    );
 
     if (!finalizeResponse.ok) {
       const errorText = await finalizeResponse.text();
-      throw new Error(`Media upload finalization failed: ${errorText}`);
+      throw new Error(`Media upload finalization failed (v2): ${errorText}`);
     }
 
     const finalizeData = await finalizeResponse.json();
-    console.log('Media upload finalized:', finalizeData);
+    console.log('Media upload finalized (v2):', finalizeData);
 
     // Check if we need to wait for processing (for videos and animated GIFs)
     if (finalizeData.processing_info) {
