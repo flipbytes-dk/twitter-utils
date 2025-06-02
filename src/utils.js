@@ -80,11 +80,12 @@ export async function refreshTwitterAccessToken(twitterCredentials) {
     }
     const accessToken = tokenResponse.access_token;
     const refreshToken = tokenResponse.refresh_token;
+    const expiredIn = tokenResponse.expires_in;
     if (!accessToken || !refreshToken) {
       throw new Error('Missing tokens in refresh response');
     }
     console.log('[refreshTwitterAccessToken] Successfully refreshed token.');
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, expiresAt: expiredIn };
   } catch (error) {
     console.error(
       '[refreshTwitterAccessToken] Failed to refresh token:',
@@ -100,4 +101,8 @@ export async function refreshTwitterAccessToken(twitterCredentials) {
     if (error?.response) e.response = error.response;
     throw e;
   }
+}
+
+export function getExpiresAt(expireIn) {
+  return new Date(now.getTime() + expireIn * 1000);
 }

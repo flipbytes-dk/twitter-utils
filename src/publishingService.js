@@ -1,5 +1,5 @@
 import { db } from '@/lib/firebase/admin';
-import { publishTweet } from './utils.js';
+import { getExpiresAt, publishTweet } from './utils.js';
 import { Timestamp } from 'firebase-admin/firestore';
 import { TweetStatus } from './constants.js';
 import { uploadMediaToTwitter } from './mediaUpload';
@@ -129,12 +129,16 @@ export class TwitterPublishingService {
    * @param accessToken The new access token
    * @param refreshToken The new refresh token
    */
-  async updateTwitterCredentials(userId, accessToken, refreshToken) {
-    await db.collection('twitter_credentials').doc(userId).update({
-      'oauthCredentials.accessToken': accessToken,
-      'oauthCredentials.refreshToken': refreshToken,
-      'oauthCredentials.updatedAt': Timestamp.now(),
-    });
+  async updateTwitterCredentials(userId, accessToken, refreshToken, expiresAt) {
+    await db
+      .collection('twitter_credentials')
+      .doc(userId)
+      .update({
+        'oauthCredentials.accessToken': accessToken,
+        'oauthCredentials.refreshToken': refreshToken,
+        'oauthCredentials.expiresAt': getExpiresAt(expiresAt),
+        'oauthCredentials.updatedAt': Timestamp.now(),
+      });
   }
 
   /**
@@ -165,15 +169,19 @@ export class TwitterPublishingService {
           '[uploadMedia] Auth error detected, attempting token refresh...'
         );
         try {
-          const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
-            await refreshTwitterAccessToken(twitterCredentials);
+          const {
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+            expiresAt,
+          } = await refreshTwitterAccessToken(twitterCredentials);
           if (!twitterCredentials.userId) {
             throw new Error('User ID is required for token refresh');
           }
           await this.updateTwitterCredentials(
             twitterCredentials.userId,
             newAccessToken,
-            newRefreshToken
+            newRefreshToken,
+            expiresAt
           );
           // Update credentials in memory for retry
           twitterCredentials.oauthCredentials.accessToken = newAccessToken;
@@ -282,15 +290,19 @@ export class TwitterPublishingService {
         console.log('Attempting to refresh Twitter OAuth token...');
         try {
           // Refresh the token with better error handling
-          const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
-            await refreshTwitterAccessToken(twitterCredentials);
+          const {
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+            expiresAt,
+          } = await refreshTwitterAccessToken(twitterCredentials);
           if (!twitterCredentials.userId) {
             throw new Error('User ID is required for token refresh');
           }
           await this.updateTwitterCredentials(
             twitterCredentials.userId,
             newAccessToken,
-            newRefreshToken
+            newRefreshToken,
+            expiresAt
           );
 
           console.log(
