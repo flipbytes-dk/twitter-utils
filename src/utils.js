@@ -104,5 +104,6 @@ export async function refreshTwitterAccessToken(twitterCredentials) {
 }
 
 export function getExpiresAt(expireIn) {
+  const now = new Date();
   return new Date(now.getTime() + expireIn * 1000);
 }
